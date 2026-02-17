@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/webhook
+    username: webhook
+    password: webhook
+    driver-class-name: org.postgresql.Driver
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+logging:
+  level:
+    com.zaxxer.hikari: INFO
+    org.springframework.jdbc: INFO
+    liquibase: DEBUG
