@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16
+    container_name: webhook-db
+    environment:
+      POSTGRES_DB: webhook
+      POSTGRES_USER: webhook
+      POSTGRES_PASSWORD: webhook
+    ports:
+      - "5434:5434"
+    volumes:
+      - webhook_pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: webhook-app
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_HOST: db
+      DB_PORT: 5434
+      DB_NAME: webhook
+      DB_USER: webhook
+      DB_PASS: webhook
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+volumes:
+  webhook_pgdata:

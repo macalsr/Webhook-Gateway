@@ -50,5 +50,19 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <id>local</id>
+            <properties>
+                <spring-boot.run.profiles>local</spring-boot.run.profiles>
+            </properties>
+        </profile>
 
+        <profile>
+            <id>docker</id>
+            <properties>
+                <spring-boot.run.profiles>docker</spring-boot.run.profiles>
+            </properties>
+        </profile>
+    </profiles>
 </project>
