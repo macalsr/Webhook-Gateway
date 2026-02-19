@@ -18,7 +18,7 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
-                  name: external_event_id
+                  name: event_key
                   type: varchar(120)
                   constraints:
                     nullable: false
@@ -34,23 +34,25 @@ databaseChangeLog:
                     nullable: false
               - column:
                   name: received_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: processed_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: true
 
         - addUniqueConstraint:
             tableName: webhook_event
-            columnNames: source, external_event_id
-            constraintName: uk_webhook_event_source_external_id
+            columnNames: source,event_key
+            constraintName: uk_webhook_event_source_event_key
 
         - createIndex:
             tableName: webhook_event
-            indexName: idx_webhook_event_status
+            indexName: idx_webhook_event_status_received_at
             columns:
               - column:
                   name: status
+              - column:
+                  name: received_at

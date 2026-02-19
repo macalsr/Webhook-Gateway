@@ -12,3 +12,8 @@ logging:
     com.zaxxer.hikari: INFO
     org.springframework.jdbc: INFO
     liquibase: DEBUG
+
+webhook:
+  secrets:
+    github: "super-secret-github"
+    stripe: "super-secret-stripe"

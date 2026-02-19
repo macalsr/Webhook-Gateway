@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: webhook
       POSTGRES_PASSWORD: webhook
     ports:
-      - "5434:5434"
+      - "5432:5432"
     volumes:
       - webhook_pgdata:/var/lib/postgresql/data
 
@@ -17,7 +17,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: local
       DB_HOST: db
-      DB_PORT: 5434
+      DB_PORT: 5432
       DB_NAME: webhook
       DB_USER: webhook
       DB_PASS: webhook
