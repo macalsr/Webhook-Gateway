@@ -3,7 +3,6 @@ package com.mariaribeiro.webhookprocessor.webhook.infrastructure.persistence;
 import com.mariaribeiro.webhookprocessor.webhook.domain.model.EventStatus;
 import com.mariaribeiro.webhookprocessor.webhook.domain.model.WebhookEvent;
 import com.mariaribeiro.webhookprocessor.webhook.port.out.WebhookEventRepository;
-import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,33 +22,27 @@ class WebhookEventRepositoryIT {
     @Autowired
     WebhookEventRepository repository;
 
+
     @Test
-    @Transactional
-    void shouldSaveAndFindBySourceAndEventKey(){
-        Instant fixed = Instant.parse("2026-01-01T00:00:00Z");
+    void shouldSaveAndFindBySourceAndEventKey() {
+        String eventKey = "evt_" + UUID.randomUUID();
+
         WebhookEvent event = new WebhookEvent(
                 UUID.randomUUID(),
                 "stripe",
-                "evt_123",
+                eventKey,
                 "{\"hello\":\"world\"}",
                 EventStatus.RECEIVED,
-                fixed,
+                Instant.now(),
                 null
         );
 
-        WebhookEvent event2 = new WebhookEvent(
-                UUID.randomUUID(),
-                "stripe",
-                "evt_123",
-                "{\"hello\":\"world\"}",
-                EventStatus.RECEIVED,
-                fixed,
-                null
-        );
         repository.save(event);
-        Optional<WebhookEvent> bySourceAndEventId = repository.findBySourceAndEventKey("stripe", "evt_123");
 
-        assertThat(bySourceAndEventId).isPresent();
-        assertThat(bySourceAndEventId.get().payload()).contains("hello");
+        Optional<WebhookEvent> found =
+                repository.findBySourceAndEventKey("stripe", eventKey);
+
+        assertThat(found).isPresent();
+        assertThat(found.get().payload()).contains("hello");
     }
 }

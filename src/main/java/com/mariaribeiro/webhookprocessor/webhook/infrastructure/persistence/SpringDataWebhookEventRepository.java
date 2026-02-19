@@ -7,7 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface SpringDataWebhookEventRepository extends JpaRepository<JpaWebhookEventEntity, UUID> {
+public interface SpringDataWebhookEventRepository extends JpaRepository<WebhookEventEntity, UUID> {
 
-    Optional<JpaWebhookEventEntity> findBySourceAndEventKey(String source, String eventKey);
+    Optional<WebhookEventEntity> findBySourceAndEventKey(String source, String eventKey);
 }
