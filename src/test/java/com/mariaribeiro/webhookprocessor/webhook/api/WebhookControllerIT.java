@@ -19,7 +19,6 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,6 +45,7 @@ class WebhookControllerIT {
     WebhookEventRepository repository;
 
     @MockitoBean Clock clock;
+
     @TestConfiguration
     static class TestConfig {
 
@@ -56,14 +56,11 @@ class WebhookControllerIT {
             return p;
         }
 
-        @Bean
-        Clock clock() {
-            return Clock.fixed(Instant.parse("2026-01-01T00:05:00Z"), ZoneOffset.UTC);
-        }
     }
 
     @Test
     void shouldReturn201WhenSignatureIsValid() throws Exception {
+        when(clock.instant()).thenReturn(Instant.parse("2026-01-01T00:10:00Z"));
         String rawBody = """
                 {"eventKey":"evt_123","payload":{"hello":"world"}}
                 """.trim();
@@ -100,6 +97,7 @@ class WebhookControllerIT {
 
     @Test
     void shouldReturn200WhenEventIsDuplicate() throws Exception {
+        when(clock.instant()).thenReturn(Instant.parse("2026-01-01T00:10:00Z"));
         String rawBody = """
                 {"eventKey":"evt_123","payload":{"hello":"world"}}
                 """.trim();
@@ -135,6 +133,7 @@ class WebhookControllerIT {
 
     @Test
     void shouldReturn401WhenSignatureIsInvalid() throws Exception {
+        when(clock.instant()).thenReturn(Instant.parse("2026-01-01T00:10:00Z"));
         String rawBody = """
                 {"eventKey":"evt_123","payload":{"hello":"world"}}
                 """.trim();
@@ -151,6 +150,7 @@ class WebhookControllerIT {
 
     @Test
     void shouldReturn401WhenTimestampOutsideReplayWindow() throws Exception {
+        when(clock.instant()).thenReturn(Instant.parse("2026-01-01T00:10:00Z"));
         String rawBody = """
                 {"eventKey":"evt_123","payload":{"hello":"world"}}
                 """.trim();
@@ -169,6 +169,7 @@ class WebhookControllerIT {
 
     @Test
     void shouldReturn404WhenSourceIsUnknown() throws Exception {
+        when(clock.instant()).thenReturn(Instant.parse("2026-01-01T00:10:00Z"));
         String rawBody = """
                 {"eventKey":"evt_123","payload":{"hello":"world"}}
                 """.trim();
