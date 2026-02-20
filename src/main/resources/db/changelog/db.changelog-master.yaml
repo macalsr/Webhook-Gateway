@@ -1,0 +1,58 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-init-webhook-events
+      author: maria
+      changes:
+        - createTable:
+            tableName: webhook_event
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: source
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: event_key
+                  type: varchar(120)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payload
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: received_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: processed_at
+                  type: timestamptz
+                  constraints:
+                    nullable: true
+
+        - addUniqueConstraint:
+            tableName: webhook_event
+            columnNames: source,event_key
+            constraintName: uk_webhook_event_source_event_key
+
+        - createIndex:
+            tableName: webhook_event
+            indexName: idx_webhook_event_status_received_at
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: received_at
