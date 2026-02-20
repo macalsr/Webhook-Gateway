@@ -14,4 +14,12 @@ public class WebhookProperties {
 
     private Map<String, String> secrets = new HashMap<>();
 
+    public String secretFor(String source) {
+        String secret = secrets.get(source);
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalArgumentException("Unknown source or missing secret: " + source);
+        }
+        return secret;
+    }
+
 }
