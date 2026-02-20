@@ -12,7 +12,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.apache.logging.log4j.util.Strings.isBlank;
+import static io.micrometer.common.util.StringUtils.isBlank;
 
 
 @Service
