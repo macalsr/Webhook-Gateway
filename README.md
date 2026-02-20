@@ -1,236 +1,215 @@
-# Webhook Gateway / Processor (Spring Boot + PostgreSQL)
+# Spring Boot Webhook Processor (Generic Gateway)
 
-Gateway genérico para receber webhooks de múltiplas fontes (ex.: `shopify`, `trustedform`, `generic`) com:
-- validação de assinatura (HMAC-SHA256)
-- persistência do evento bruto (raw)
-- rastreabilidade (status, timestamps)
-- base para processamento assíncrono (futuro)
+A minimal, production-minded webhook ingestion API built with **Java 21** and **Spring Boot 4**.
 
-> Objetivo: ser um “ponto de entrada” confiável e audível para webhooks, sem acoplar o core à regra específica de cada provider.
+This project focuses on the “hard parts” of webhooks:
+- **Signature verification (HMAC-SHA256)**
+- **Replay protection (timestamp window)**
+- **Idempotency** (no duplicate processing for the same event)
+- **Persistence** (store raw payload + status for auditing and troubleshooting)
 
----
-
-## 1) Conceitos e Negócio
-
-### Por que genérico?
-Webhooks variam muito por provider, mas o *core* de entrada é praticamente sempre o mesmo:
-- autenticar (assinatura)
-- registrar o evento recebido
-- responder rápido (ACK)
-- processar depois (quando necessário)
-
-O sistema trata o payload como JSON bruto (`payload_json`) e usa `source` para direcionar regras específicas futuramente.
-
-### Fontes (sources)
-Lista inicial (pode crescer):
-- `shopify`
-- `trustedform`
-- `generic` (default / testes)
+It is intentionally **generic**: you can plug any provider (Stripe, Shopify, internal systems, etc.) by configuring a `source` and a shared secret.
 
 ---
 
-## 2) Contrato mínimo do Evento (persistido)
+## Features (MVP)
 
-Campos mínimos a persistir:
-
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `event_id` | UUID/String | ID interno do evento (gerado no recebimento) |
-| `source` | String | Origem do webhook (`shopify`, `trustedform`, etc.) |
-| `payload_json` | JSON/Text | Body recebido (raw) |
-| `received_at` | Timestamp | Momento do recebimento |
-| `status` | String | Estado de processamento (`RECEIVED`, `PROCESSED`, `FAILED`, etc.) |
-
-### Status sugeridos
-- `RECEIVED` — persistido com sucesso
-- `VALIDATION_FAILED` — assinatura inválida / payload inválido
-- `PROCESSING` — em processamento (futuro)
-- `PROCESSED` — processado (futuro)
-- `FAILED` — falha (futuro)
-- `DEAD_LETTER` — excedeu tentativas (futuro)
+- `POST /webhooks/{source}`
+- Reads the **raw request body** (no reformatting)
+- Validates:
+  - `X-Timestamp` header (epoch seconds)
+  - `X-Signature` header (HMAC-SHA256)
+  - replay window (default: **300s**)
+- Extracts:
+  - `eventKey` (unique id from provider)
+  - `payload` (JSON object)
+- Stores event in DB with:
+  - `source`, `external_event_id`, `payload`, `status`, `received_at`
+- Idempotency:
+  - Unique constraint on `(source, external_event_id)`
+  - Duplicate requests return **200 OK**
+  - New requests return **201 Created** + `Location` header
 
 ---
 
-## 3) Endpoint (Contrato HTTP)
+## Request Contract
 
-### Receber webhook
+### Endpoint
 `POST /webhooks/{source}`
 
-**Path params**
-- `source`: string (ex.: `shopify`, `trustedform`, `generic`)
+### Required headers
+- `X-Timestamp`: epoch seconds (e.g. `1767225900`)
+- `X-Signature`: `sha256=<hex>` (or just `<hex>`)
 
-**Headers**
-- `Content-Type: application/json`
-- `X-Signature: <hex do HMAC-SHA256 do body>` (ver assinatura)
-
-**Body**
-- JSON livre (depende do provider). O sistema **não valida schema do provider** neste estágio.
-
-**Respostas**
-- `202 Accepted`: evento aceito e persistido
-- `401 Unauthorized`: assinatura inválida
-- `400 Bad Request`: payload inválido (não parseável, etc.)
-- `404 Not Found`: source não suportado (opcional, se você quiser restringir)
-
----
-
-## 4) Assinatura (HMAC-SHA256)
-
-### Regra
-- O sender calcula `HMAC-SHA256` do **body raw** (string exata enviada).
-- Usa um segredo compartilhado por `source`.
-- Envia o resultado no header: `X-Signature`.
-
-**Formato recomendado da assinatura**
-- hex lowercase (ex.: `a3f1...`)
-
-### Pseudocódigo (sender)
-```
-
-signature = HEX( HMAC_SHA256(secret, raw_body_bytes) )
-send header: X-Signature: signature
-
-```
-
-### Importante
-- Assinatura deve ser calculada sobre o **body bruto**, não sobre “JSON reformatado”.
-- No servidor, compare em **constant time** (evitar timing attack).
-
-### Segredos por source
-Configurar algo assim:
-- `WEBHOOK_SECRET_SHOPIFY`
-- `WEBHOOK_SECRET_TRUSTEDFORM`
-- `WEBHOOK_SECRET_GENERIC`
-
----
-
-## 5) Banco de dados (PostgreSQL)
-
-### Tabela sugerida: `webhook_event`
-Campos típicos:
-- `event_id` (PK)
-- `source`
-- `payload_json`
-- `received_at`
-- `status`
-- (opcional) `signature`
-- (opcional) `headers_json`
-- (opcional) `error_message`
-
-> Mesmo mantendo só os “mínimos”, vale muito guardar `headers_json` e `signature` pra debug/auditoria.
-
----
-
-## 6) Migrations (Liquibase)
-
-Este projeto usa **Liquibase** para versionar schema.
-
-### Estrutura esperada
-```
-
-src/main/resources/db/changelog/db.changelog-master.xml
-src/main/resources/db/changelog/changes/001-init.xml
-
+### Body (JSON)
+```json
+{
+  "eventKey": "evt_123",
+  "payload": {
+    "hello": "world"
+  }
+}
 ````
 
-No startup, o Liquibase cria:
-- `databasechangelog`
-- `databasechangeloglock`
-- suas tabelas de domínio (ex.: `webhook_event`)
+### Signature algorithm
+
+The signature is computed from:
+
+```
+message = "<timestamp>.<rawBody>"
+signature = HMAC_SHA256(secret, message)  -> hex string
+```
 
 ---
 
-## 7) Rodando local (Docker + App)
+## Responses
 
-### Subir o Postgres
-Na pasta onde está seu `docker-compose.yml`:
+### 201 Created (new event)
+
+* `Location: /webhooks/{source}/{eventKey}`
+* JSON response body with stored metadata
+
+### 200 OK (duplicate event)
+
+* Same response body, but indicates the event was already known
+
+### 401 Unauthorized
+
+* Missing/invalid signature
+* Invalid timestamp
+* Timestamp outside replay window
+
+### 404 Not Found
+
+* Unknown `source` (no configured secret)
+
+### 400 Bad Request
+
+* Invalid JSON
+* Missing `eventKey` or `payload`
+
+---
+
+## Database Schema
+
+Table: `webhook_event`
+
+Columns:
+
+* `id` (UUID, PK)
+* `source` (varchar)
+* `external_event_id` (varchar)  ✅ unique with source
+* `payload` (text)
+* `status` (varchar)
+* `received_at` (timestamp)
+* `processed_at` (timestamp, nullable)
+
+Constraints:
+
+* Unique: `(source, external_event_id)` (idempotency)
+
+---
+
+## Project Structure (high level)
+
+```
+com.mariaribeiro.webhookprocessor
+├── config/                    # properties, clock, etc
+└── webhook/
+    ├── api/                   # controllers + DTOs
+    ├── application/           # use cases / services
+    ├── domain/                # pure domain model + exceptions
+    ├── infrastructure/        # crypto + persistence adapters
+    └── port/                  # ports (interfaces)
+```
+
+---
+
+## Running Locally
+
+### Option A: Run with Docker (recommended)
+
+1. Start Postgres:
+
 ```bash
 docker compose up -d
-docker compose ps
-````
+```
 
-### Rodar a aplicação (profile local)
-
-Pelo IntelliJ:
-
-* VM options / env: `-Dspring.profiles.active=local`
-
-Ou via Maven:
+2. Run the app (local profile):
 
 ```bash
 mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
----
-
-## 8) Configuração (application-local)
-
-Exemplo (YAML):
-
-```yaml
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/webhook
-    username: webhook
-    password: webhook
-    driver-class-name: org.postgresql.Driver
-
-  liquibase:
-    enabled: true
-    change-log: classpath:db/changelog/db.changelog-master.xml
-    default-schema: public
-
-  jpa:
-    hibernate:
-      ddl-auto: none
-
-logging:
-  level:
-    liquibase: INFO
-    org.springframework.jdbc: INFO
-    com.zaxxer.hikari: INFO
-```
-
----
-
-## 9) Exemplo de request (cURL)
-
-### Exemplo para source `generic`
+Health check:
 
 ```bash
-curl -X POST "http://localhost:8080/webhooks/generic" \
-  -H "Content-Type: application/json" \
-  -H "X-Signature: <hex_hmac_sha256_do_body>" \
-  -d '{
-    "type": "user.created",
-    "id": "abc-123",
-    "payload": { "name": "Maria" }
-  }'
+curl http://localhost:8080/actuator/health
 ```
 
-Resposta esperada:
+### Option B: Run with H2 (tests/dev)
 
-* `202 Accepted`
-
----
-
-## 10) Checklist do “Definition of Done” (MVP)
-
-* [ ] Endpoint `POST /webhooks/{source}` criado
-* [ ] Validação `X-Signature` com HMAC-SHA256 (por source)
-* [ ] Persistência do evento raw em `webhook_event`
-* [ ] `status=RECEIVED` ao persistir
-* [ ] Retorno `202` ao aceitar
-* [ ] Liquibase criando tabelas automaticamente no startup
-* [ ] Healthcheck no actuator (`/actuator/health`)
+The test profile uses H2 to run integration tests without containers.
 
 ---
 
-## 11) Próximos incrementos (futuro)
+## Quick Test with curl
 
-* Processamento assíncrono (fila / scheduler)
-* Retry com backoff
-* Dead-letter status
-* Idempotência (deduplicação por provider-id)
-* Normalização por source (adapters)
-* Observabilidade (correlation id, métricas)
+Example:
+
+```bash
+RAW='{"eventKey":"evt_123","payload":{"hello":"world"}}'
+TS=1767225900
+SECRET='secret-123'
+
+# You can compute signature using any tool. Example in Python:
+SIG=$(python - <<'PY'
+import hmac, hashlib
+secret = b"secret-123"
+ts = "1767225900"
+raw = '{"eventKey":"evt_123","payload":{"hello":"world"}}'
+msg = f"{ts}.{raw}".encode()
+print(hmac.new(secret, msg, hashlib.sha256).hexdigest())
+PY
+)
+
+curl -i -X POST "http://localhost:8080/webhooks/stripe" \
+  -H "Content-Type: application/json" \
+  -H "X-Timestamp: $TS" \
+  -H "X-Signature: sha256=$SIG" \
+  --data "$RAW"
+```
+
+---
+
+## Notes / Design Decisions
+
+* **Raw body is used for signature validation** to avoid JSON reformatting issues.
+* **Replay protection** blocks old or future timestamps beyond the configured window.
+* **Idempotency** is enforced at the database level via a unique constraint.
+* The system stores webhook events for **auditability** and **debugging**.
+* Processing/dispatching to external systems is intentionally out of scope for the MVP.
+
+---
+
+## Next Improvements (Roadmap)
+
+* Async processing pipeline (queue + worker)
+* Retry/backoff and error categorization
+* Per-source adapters (provider-specific extractors)
+* Dead-letter handling / quarantine
+* Admin endpoints to query events by status/source/date
+* Metrics + structured logging (correlation IDs)
+
+---
+
+## Tech Stack
+
+* Java 21
+* Spring Boot 4
+* Spring Web (REST)
+* Spring Data JPA
+* Liquibase (migrations)
+* PostgreSQL (local via Docker)
+* H2 (test profile)
+* JUnit 5 + MockMvc for tests
